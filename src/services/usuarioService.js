@@ -1,30 +1,48 @@
-//Importando as dependências necessárias
-const bcrypt = require('bcryptjs');
-const usuarioRepository = require('../repositories/usuarioRepository');
+//Importando os recursos do arquivo de configuração do banco de dados
+const { sql, getConnection } = require('../config/database');
 
-//Função para criar um novo usuário
-async function criarUsuario(dto) {
+//Função para cadastrar um novo usuário
+async function criar(usuario) {
 
-    //Verificando se os campos obrigatórios estão preenchidos
-    if (!dto.nome || !dto.email || !dto.senha) {
-        throw new Error('Nome, email e senha são obrigatórios');
-    }
+    //Obtém a conexão com o banco de dados
+    const pool = await getConnection();
 
-    //Criptografando a senha do usuário
-    const senhaCriptografada = await bcrypt.hash(dto.senha, 10);
+    //Executa a query de inserção do novo usuário
+    const result = await pool.request()
+        .input('nome', sql.VarChar(150), usuario.nome)
+        .input('email', sql.VarChar(50), usuario.email)
+        .input('senha', sql.VarChar(100), usuario.senha)
+        .query(`
+                INSERT INTO usuarios (nome, email, senha)
+                OUTPUT INSERTED.id, INSERTED.nome, INSERTED.email, INSERTED.data_criacao
+                VALUES (@nome, @email, @senha)
+            `);
 
-    //Criando o objeto do usuário a ser salvo no banco de dados
-    const usuario = {
-        nome: dto.nome,
-        email: dto.email,
-        senha: senhaCriptografada
-    }
-
-    //Salvando o usuário no banco de dados e retornando o resultado
-    return await usuarioRepository.criar(usuario);
+    //Retorna os dados do usuário criado
+    return result.recordset[0];
 }
 
-//Exportando as funções do serviço de usuário
+//Função para obter um usuário por email
+async function buscarPorEmail(email) {
+    //Obtém a conexão com o banco de dados
+    const pool = await getConnection();
+
+    //Executa a query de busca do usuário por email
+    const result = await pool.request()
+        .input('email', sql.VarChar(50), email)
+        .query(`
+                SELECT id, nome, email, senha, data_criacao
+                FROM usuarios
+                WHERE email = @email
+            `);
+
+    //Retornar os dados do usuário encontrado
+    return result.recordset[0];
+}
+
+
+//Exportar as funções
 module.exports = {
-    criarUsuario
-}
+    criar,
+    buscarPorEmail
+};
