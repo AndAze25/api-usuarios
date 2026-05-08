@@ -14,7 +14,7 @@ async function criar(req, res) {
         );
 
         //Chamando o serviço para criar o usuário e aguardando a resposta
-        const usuario = await usuarioService.criar(dto);
+        const usuario = await usuarioService.criarUsuario(dto);
 
         //Retornando a resposta com o status 201 (Criado) e os dados do usuário criado
         res.status(201).json({

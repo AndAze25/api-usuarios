@@ -43,5 +43,6 @@ async function buscarPorEmail(email) {
 
 //Exportar as funções
 module.exports = {
-    criar
+    criar,
+    buscarPorEmail
 };

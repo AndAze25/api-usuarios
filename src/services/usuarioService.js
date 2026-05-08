@@ -1,48 +1,95 @@
-//Importando os recursos do arquivo de configuração do banco de dados
-const { sql, getConnection } = require('../config/database');
+//Importando as dependências necessárias
+const bcrypt = require('bcryptjs');
+const usuarioRepository = require('../repositories/usuarioRepository');
+const jwt = require('jsonwebtoken');
 
-//Função para cadastrar um novo usuário
-async function criar(usuario) {
+require('dotenv').config();
 
-    //Obtém a conexão com o banco de dados
-    const pool = await getConnection();
+//Função para criar um novo usuário
+async function criarUsuario(dto) {
 
-    //Executa a query de inserção do novo usuário
-    const result = await pool.request()
-        .input('nome', sql.VarChar(150), usuario.nome)
-        .input('email', sql.VarChar(50), usuario.email)
-        .input('senha', sql.VarChar(100), usuario.senha)
-        .query(`
-                INSERT INTO usuarios (nome, email, senha)
-                OUTPUT INSERTED.id, INSERTED.nome, INSERTED.email, INSERTED.data_criacao
-                VALUES (@nome, @email, @senha)
-            `);
+    //Verificando se os campos obrigatórios estão preenchidos
+    if (!dto.nome || !dto.email || !dto.senha) {
+        throw new Error('Nome, email e senha são obrigatórios');
+    }
 
-    //Retorna os dados do usuário criado
-    return result.recordset[0];
+    //Buscando o usuário pelo email para verificar se já existe um usuário com o mesmo email
+    const usuarioExistente = await usuarioRepository.buscarPorEmail(dto.email);
+
+    //Se o usuário já existir, lançamos um erro
+    if (usuarioExistente) {
+        throw new Error('Já existe um usuário com esse email');
+    }
+
+    //Criptografando a senha do usuário
+    const senhaCriptografada = await bcrypt.hash(dto.senha, 10);
+
+    //Criando o objeto do usuário a ser salvo no banco de dados
+    const usuario = {
+        nome: dto.nome,
+        email: dto.email,
+        senha: senhaCriptografada
+    }
+
+    //Salvando o usuário no banco de dados e retornando o resultado
+    return await usuarioRepository.criar(usuario);
 }
 
-//Função para obter um usuário por email
-async function buscarPorEmail(email) {
-    //Obtém a conexão com o banco de dados
-    const pool = await getConnection();
+//Função para autenticar o usuário
+async function login(dto) {
 
-    //Executa a query de busca do usuário por email
-    const result = await pool.request()
-        .input('email', sql.VarChar(50), email)
-        .query(`
-                SELECT id, nome, email, senha, data_criacao
-                FROM usuarios
-                WHERE email = @email
-            `);
+    //Verificando se os campos obrigatórios estão preenchidos
+    if (!dto.email || !dto.senha) {
+        throw new Error('Email e senha são obrigatórios');
+    }
 
-    //Retornar os dados do usuário encontrado
-    return result.recordset[0];
+    //Buscar o usuário no banco de dados através do email informado
+    const usuario = await usuarioRepository.buscarPorEmail(dto.email);
+
+    //Verificar se o usuário não foi encontrado
+    if(!usuario) {
+        throw new Error('Acesso negado. Email não encontrado.');
+    }
+
+    //Comparando a senha do banco com a senha enviada no DTO
+    const senhaValida = await bcrypt.compare(dto.senha, usuario.senha);
+
+    //Senhas não conferem
+    if(!senhaValida) {
+        throw new Error('Acesso negado. Credenciais inválidas.');
+    }
+
+    //Gerando o TOKEN JWT
+    const token = jwt.sign(
+        /* Dados do usuário */
+        {
+            id: usuario.id,
+            nome: usuario.nome,
+            email: usuario.email
+        },
+        /* Chave para assinatura do token (criptografia) */
+        process.env.JWT_SECRET,
+        /* Data de expiração do token */
+        {
+            expiresIn: process.env.JWT_EXPIRES_IN
+        }
+    );
+
+    //Retornar os dados
+    return {
+        mensagem : 'Login realizado com sucesso.',
+        token,
+        usuario: {
+            id: usuario.id,
+            nome: usuario.nome,
+            email: usuario.email,
+            data_criacao: usuario.data_criacao
+        }
+    }
 }
 
-
-//Exportar as funções
+//Exportando as funções do serviço de usuário
 module.exports = {
-    criar,
-    buscarPorEmail
-};
+    criarUsuario,
+    login
+}
